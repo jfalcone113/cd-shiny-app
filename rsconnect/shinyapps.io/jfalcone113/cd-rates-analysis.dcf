@@ -1,0 +1,10 @@
+name: cd-rates-analysis
+title:
+username: jfalcone113
+account: jfalcone113
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17674417
+bundleId: 12374568
+url: https://jfalcone113.shinyapps.io/cd-rates-analysis/
+version: 1
