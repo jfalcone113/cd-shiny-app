@@ -246,27 +246,24 @@ get_simulation_rates <- function(data, invest_ym, selected_model) {
         )
       )
 
-      # Use a plain monthly ts object so the deployed server does not
-      # perform forecast date arithmetic on a yearmonth index.
-      monthly_series <- stats::ts(
-        rate_values,
-        frequency = 12
-      )
+      # Use the fpp3/fable ARIMA implementation already used by the app.
+      # This avoids introducing the separate forecast package as a dependency.
+      one_series <- data |>
+        filter(term == selected_term) |>
+        as_tibble() |>
+        dplyr::select(date, rate) |>
+        arrange(date) |>
+        as_tsibble(index = date)
 
-      fitted_model <- forecast::auto.arima(
-        monthly_series,
-        seasonal = TRUE,
-        stepwise = TRUE,
-        approximation = FALSE
-      )
+      fitted_model <- one_series |>
+        model(ARIMA = ARIMA(rate))
 
-      forecast_result <- forecast::forecast(
-        fitted_model,
-        h = h_needed
-      )
+      forecast_result <- fitted_model |>
+        forecast(h = h_needed) |>
+        as_tibble()
 
       forecast_rate <- as.numeric(
-        forecast_result$mean[h_needed]
+        forecast_result$.mean[h_needed]
       )
 
       # A fixed ARIMA fallback prevents a blank simulator if automatic
@@ -290,7 +287,7 @@ get_simulation_rates <- function(data, invest_ym, selected_model) {
 
         source_label <- "ARIMA(1,1,0) forecast"
       } else {
-        source_label <- "Automatic ARIMA forecast"
+        source_label <- "fpp3 ARIMA forecast"
       }
 
       tibble(
