@@ -820,7 +820,7 @@ ui <- navbarPage(
         div(
           class = "main-panel-card",
           h3("Estimated CD Value at Maturity"),
-          plotOutput("sim_plot", height = "380px")
+          plotOutput("sim_plot", height = "500px")
         ),
         
         div(
@@ -1180,41 +1180,102 @@ server <- function(input, output, session) {
         term_months = as.numeric(
           str_extract(as.character(term), "\\d+")
         ),
+        
         initial_amount = input$initial_amount,
+        
         maturity_value =
           initial_amount *
           (1 + rate / 100 / 12) ^ term_months,
+        
         interest_earned =
-          maturity_value - initial_amount
+          maturity_value - initial_amount,
+        
+        percent_gain =
+          (interest_earned / initial_amount) * 100,
+        
+        annualized_gain =
+          (
+            (maturity_value / initial_amount) ^
+              (12 / term_months) - 1
+          ) * 100
       )
+    
   })
   
+  
   output$sim_plot <- renderPlot({
-    ggplot(sim_data(), aes(x = term, y = maturity_value, fill = term)) +
-      geom_col(show.legend = FALSE, width = 0.65) +
-      geom_text(
-        aes(label = dollar(round(maturity_value, 2))),
-        vjust = -0.4,
-        fontface = "bold"
+    
+    ggplot(
+      sim_data(),
+      aes(
+        x = term,
+        y = maturity_value,
+        fill = term
+      )
+    ) +
+      
+      geom_col(
+        show.legend = FALSE,
+        width = 0.65
       ) +
+      
+      geom_text(
+        aes(
+          label = paste0(
+            dollar(round(maturity_value, 2)),
+            "\n+",
+            round(percent_gain, 1),
+            "% total",
+            "\n",
+            round(annualized_gain, 1),
+            "% annualized"
+          )
+        ),
+        vjust = -0.3,
+        fontface = "bold",
+        lineheight = 1.1
+      ) +
+      
       labs(
         title = paste(
           "Projected Value at CD Maturity",
           ifelse(
             yearmonth(input$invest_date) > max_date,
-            paste("using", input$sim_model, "forecasted rates"),
+            paste(
+              "using",
+              input$sim_model,
+              "forecasted rates"
+            ),
             "using observed historical rates"
           )
         ),
+        subtitle =
+          "Total gain reflects different holding periods; annualized return allows comparison across terms",
         x = "CD Term",
-        y = "Maturity value"
+        y = "Maturity Value"
       ) +
-      scale_fill_manual(values = c("#ff8200", "#4b5563", "#9ca3af")) +
-      scale_y_continuous(labels = dollar_format()) +
+      
+      scale_fill_manual(
+        values = c(
+          "#ff8200",
+          "#4b5563",
+          "#9ca3af"
+        )
+      ) +
+      
+      scale_y_continuous(
+        labels = dollar_format(),
+        expand = expansion(
+          mult = c(0, 0.20)
+        )
+      ) +
+      
       plot_theme
   })
   
+  
   output$sim_table <- renderTable({
+    
     sim_data() |>
       transmute(
         Term = term,
@@ -1222,8 +1283,14 @@ server <- function(input, output, session) {
         `Rate Source` = rate_source,
         `Rate (%)` = round(rate, 3),
         `Initial Amount` = dollar(initial_amount),
-        `Estimated Maturity Value` = dollar(round(maturity_value, 2)),
-        `Estimated Interest Earned` = dollar(round(interest_earned, 2))
+        `Estimated Maturity Value` =
+          dollar(round(maturity_value, 2)),
+        `Estimated Interest Earned` =
+          dollar(round(interest_earned, 2)),
+        `Percent Gain` =
+          paste0(round(percent_gain, 1), "%"),
+        `Annualized Gain` =
+          paste0(round(annualized_gain, 1), "%")
       )
   })
 }
