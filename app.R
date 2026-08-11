@@ -266,26 +266,12 @@ get_simulation_rates <- function(data, invest_ym, selected_model) {
         forecast_result$.mean[h_needed]
       )
 
-      # A fixed ARIMA fallback prevents a blank simulator if automatic
-      # model selection fails in the hosted Linux environment.
+      # If automatic ARIMA cannot produce a finite forecast, fall back to
+      # the historical mean. This uses only the packages already loaded by
+      # the app and avoids introducing another forecasting dependency.
       if (!is.finite(forecast_rate)) {
-        fallback_model <- stats::arima(
-          monthly_series,
-          order = c(1, 1, 0),
-          include.mean = FALSE,
-          method = "ML"
-        )
-
-        fallback_forecast <- stats::predict(
-          fallback_model,
-          n.ahead = h_needed
-        )
-
-        forecast_rate <- as.numeric(
-          fallback_forecast$pred[h_needed]
-        )
-
-        source_label <- "ARIMA(1,1,0) forecast"
+        forecast_rate <- mean(rate_values, na.rm = TRUE)
+        source_label <- "Historical mean fallback"
       } else {
         source_label <- "fpp3 ARIMA forecast"
       }
