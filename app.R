@@ -1,4 +1,4 @@
-
+library(forecast)
 library(shiny)
 library(bslib)
 library(fpp3)
@@ -6,7 +6,6 @@ library(tidyverse)
 library(lubridate)
 library(scales)
 library(plotly)
-library(forecast)
 
 # -----------------------------
 # 1. Data preparation
