@@ -1246,11 +1246,20 @@ server <- function(input, output, session) {
         )
       ) +
       
+      # Zoom the y-axis to the range of the simulated maturity values so
+      # differences between CD terms are visually proportional instead of
+      # being compressed by a zero baseline.
+      coord_cartesian(
+        ylim = c(
+          min(sim_data()$maturity_value) -
+            max(diff(range(sim_data()$maturity_value)) * 0.35, 1),
+          max(sim_data()$maturity_value) +
+            max(diff(range(sim_data()$maturity_value)) * 0.55, 1)
+        )
+      ) +
       scale_y_continuous(
         labels = dollar_format(),
-        expand = expansion(
-          mult = c(0, 0.20)
-        )
+        expand = expansion(mult = c(0, 0))
       ) +
       
       plot_theme
