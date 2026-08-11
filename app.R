@@ -625,14 +625,29 @@ ui <- navbarPage(
   
   tabPanel(
     "Term Spread",
-    fluidPage(
-      div(
-        class = "main-panel-card",
-        h3("Spread Between 48-Month and 12-Month CD Rates"),
-        plotlyOutput("spread_plot", height = "620px"),
-        p(
-          strong("Interpretation guide:"),
-          "\n Positive values indicate that the 48-month CD pays more than the 12-month CD. Negative values indicate an inverted term structure in which the shorter-term CD pays more. Hover over the line for the exact spread and date."
+    sidebarLayout(
+      sidebarPanel(
+        width = 3,
+        h4("Date range:"),
+        sliderInput(
+          "spread_date_range",
+          label = NULL,
+          min = as.Date(min_date),
+          max = as.Date(max_date),
+          value = c(as.Date(min_date), as.Date(max_date)),
+          timeFormat = "%b %Y"
+        )
+      ),
+      mainPanel(
+        width = 9,
+        div(
+          class = "main-panel-card",
+          h3("Spread Between 48-Month and 12-Month CD Rates"),
+          plotlyOutput("spread_plot", height = "620px"),
+          p(
+            strong("Interpretation guide:"),
+            "\n Positive values indicate that the 48-month CD pays more than the 12-month CD. Negative values indicate an inverted term structure in which the shorter-term CD pays more. Hover over the line for the exact spread and date."
+          )
         )
       )
     )
@@ -890,143 +905,109 @@ server <- function(input, output, session) {
       plot_theme
   })
   
+  spread_data_full <- cd |>
+    as_tibble() |>
+    mutate(date = as.Date(date)) |>
+    dplyr::select(date, term, rate) |>
+    pivot_wider(names_from = term, values_from = rate) |>
+    transmute(
+      date,
+      spread_48_12 = round(`48 Month` - `12 Month`, 3),
+      regime = if_else(
+        spread_48_12 >= 0,
+        "Normal (long-term pays more)",
+        "Inverted (short-term pays more)"
+      ),
+      hover_color = if_else(spread_48_12 >= 0, "#0073e6", "#e63946"),
+      pos_spread = pmax(spread_48_12, 0),
+      neg_spread = pmin(spread_48_12, 0)
+    ) |>
+    drop_na(spread_48_12)
+
+  # Compute the true first inversion from the complete dataset, not the selected window.
+  true_inversion_date <- spread_data_full |>
+    filter(spread_48_12 < 0) |>
+    slice_min(date, n = 1, with_ties = FALSE) |>
+    pull(date)
+
   output$spread_plot <- renderPlotly({
-    spread_data <- cd |>
-      as_tibble() |>
-      mutate(date = as.Date(date)) |>
-      dplyr::select(date, term, rate) |>
-      pivot_wider(names_from = term, values_from = rate) |>
-      transmute(
-        date,
-        spread_48_12 = round(`48 Month` - `12 Month`, 3),
-        regime = if_else(
-          spread_48_12 >= 0,
-          "Normal (long-term pays more)",
-          "Inverted (short-term pays more)"
-        ),
-        pos_spread = pmax(spread_48_12, 0),
-        neg_spread = pmin(spread_48_12, 0),
-        hover_text = paste0(
-          "<b>", regime, "</b>",
-          "<br>Date: ", format(date, "%B %Y"),
-          "<br>Spread: ", sprintf("%+.3f", spread_48_12),
-          " percentage points"
-        )
-      ) |>
-      drop_na(spread_48_12)
-    
-    inverted_dates <- spread_data |>
-      filter(spread_48_12 < 0) |>
-      pull(date)
-    
-    inversion_date <- if (length(inverted_dates) > 0) {
-      min(inverted_dates)
-    } else {
-      as.Date(NA)
-    }
-    
+    spread_data <- spread_data_full |>
+      filter(
+        date >= as.Date(input$spread_date_range[1]),
+        date <= as.Date(input$spread_date_range[2])
+      )
+
+    req(nrow(spread_data) > 0)
+
+    show_inversion <- length(true_inversion_date) > 0 &&
+      true_inversion_date >= as.Date(input$spread_date_range[1]) &&
+      true_inversion_date <= as.Date(input$spread_date_range[2])
+
+    y_min <- min(spread_data$spread_48_12)
+    y_max <- max(spread_data$spread_48_12)
+
     spread_shapes <- list(
       list(
         type = "line",
-        x0 = min(spread_data$date),
-        x1 = max(spread_data$date),
-        y0 = 0,
-        y1 = 0,
+        x0 = min(spread_data$date), x1 = max(spread_data$date),
+        y0 = 0, y1 = 0,
         line = list(color = "#4b5563", dash = "dash", width = 1)
       )
     )
-    
     spread_annotations <- list()
-    
-    if (!is.na(inversion_date)) {
-      spread_shapes <- append(
-        spread_shapes,
-        list(
-          list(
-            type = "line",
-            x0 = inversion_date,
-            x1 = inversion_date,
-            y0 = min(spread_data$spread_48_12) * 1.05,
-            y1 = max(spread_data$spread_48_12) * 1.20,
-            line = list(color = "#e63946", dash = "dot", width = 1.5)
-          )
-        )
+
+    if (show_inversion) {
+      spread_shapes[[2]] <- list(
+        type = "line",
+        x0 = true_inversion_date, x1 = true_inversion_date,
+        y0 = y_min * 1.05, y1 = y_max * 1.20,
+        line = list(color = "#e63946", dash = "dot", width = 1.5)
       )
-      
-      spread_annotations <- list(
-        list(
-          x = inversion_date,
-          y = max(spread_data$spread_48_12) * 1.15,
-          text = paste0("Inversion begins:<br>", format(inversion_date, "%b %Y")),
-          showarrow = FALSE,
-          font = list(color = "#e63946", size = 13),
-          xanchor = "left"
-        )
+      spread_annotations[[1]] <- list(
+        x = true_inversion_date, y = y_max * 1.15,
+        text = paste0("Inversion begins:<br>", format(true_inversion_date, "%b %Y")),
+        showarrow = FALSE, font = list(color = "#e63946", size = 13),
+        xanchor = "left"
       )
     }
-    
+
     plot_ly(spread_data, x = ~date) |>
       add_ribbons(
-        ymin = 0,
-        ymax = ~pos_spread,
+        ymin = 0, ymax = ~pos_spread,
         name = "Normal (long-term pays more)",
         fillcolor = "rgba(0, 115, 230, 0.45)",
-        line = list(color = "transparent"),
-        hoverinfo = "skip"
+        line = list(color = "transparent"), hoverinfo = "skip"
       ) |>
       add_ribbons(
-        ymin = ~neg_spread,
-        ymax = 0,
+        ymin = ~neg_spread, ymax = 0,
         name = "Inverted (short-term pays more)",
         fillcolor = "rgba(230, 57, 70, 0.45)",
-        line = list(color = "transparent"),
-        hoverinfo = "skip"
+        line = list(color = "transparent"), hoverinfo = "skip"
       ) |>
       add_trace(
-        y = ~spread_48_12,
-        type = "scatter",
-        mode = "lines",
+        y = ~spread_48_12, type = "scatter", mode = "lines",
         line = list(color = "black", width = 2),
-        text = ~hover_text,
-        hovertemplate = "%{text}<extra></extra>",
-        name = "Spread",
-        showlegend = FALSE
+        name = "Spread", showlegend = FALSE,
+        hovertemplate = "%{y:+.3f} pts<br>%{x|%B %Y}<extra></extra>",
+        hoverlabel = list(bgcolor = ~hover_color, font = list(color = "white", size = 13))
       ) |>
       layout(
         xaxis = list(
-          title = "",
-          type = "date",
-          tickformat = "%b %Y",
-          dtick = "M3",
-          tickangle = -45,
-          showspikes = TRUE,
-          spikemode = "across",
-          spikesnap = "cursor",
-          spikedash = "dot",
-          spikecolor = "#888888"
+          title = "", type = "date", tickformat = "%b %Y", dtick = "M3",
+          tickangle = -45, showspikes = TRUE, spikemode = "across",
+          spikesnap = "cursor", spikedash = "dot", spikecolor = "#888888"
         ),
         yaxis = list(
           title = "48-month rate minus 12-month rate (percentage points)",
-          zeroline = FALSE,
-          showspikes = TRUE,
-          spikemode = "across",
-          spikedash = "dot",
-          spikecolor = "#888888"
+          zeroline = FALSE, showspikes = TRUE, spikemode = "across",
+          spikedash = "dot", spikecolor = "#888888"
         ),
-        shapes = spread_shapes,
-        annotations = spread_annotations,
-        legend = list(
-          orientation = "h",
-          x = 0.5,
-          xanchor = "center",
-          y = 1.04,
-          yanchor = "bottom"
-        ),
-        hovermode = "x",
-        margin = list(t = 90)
+        shapes = spread_shapes, annotations = spread_annotations,
+        legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.04, yanchor = "bottom"),
+        hovermode = "x", margin = list(t = 90)
       )
   })
-  
+
   monthly_changes <- cd |>
     as_tibble() |>
     mutate(date = as.Date(date)) |>
